@@ -19,8 +19,9 @@ The main goals are:
 - serialize CoreBluetooth work on one dedicated queue;
 - deliver presentation-facing changes on the main actor;
 - model BLE and file-transfer behavior with explicit state and events;
-- prevent retain cycles through clear ownership and weak observer relationships;
-- keep the BLE layer reusable and compatible with a future Combine bridge without requiring Combine today.
+- prevent retain cycles through explicit ownership and cancellable Combine subscriptions;
+- use Combine for long-lived BLE/service streams while keeping Swift Observation for ViewModel-to-SwiftUI updates;
+- expose publishers as `AnyPublisher` so subjects remain implementation details.
 
 The application follows an MVVM + Coordinator style with a lightweight Clean Architecture separation between Presentation, Domain/Support types, and Infrastructure.
 
@@ -176,13 +177,13 @@ flowchart TD
 
     FTVM --> FT
 
-    BLE -. weak observer .-> CONN
-    BLE -. weak observer .-> SCAN
-    BLE -. weak observer .-> DEV
-    BLE -. weak observer .-> FTVM
-    BLE -. weak observer .-> FT
+    BLE -. BluetoothEvent publisher .-> CONN
+    BLE -. BluetoothEvent publisher .-> SCAN
+    BLE -. BluetoothEvent publisher .-> DEV
+    BLE -. BluetoothEvent publisher .-> FTVM
+    BLE -. BluetoothEvent publisher .-> FT
 
-    FT -. weak observer .-> FTVM
+    FT -. FileTransferState publisher .-> FTVM
 ```
 
 ### Strong ownership
@@ -192,13 +193,13 @@ flowchart TD
 - feature Views own their feature ViewModels for the lifetime of the screen;
 - `FileTransferViewModel` owns `FileTransferService`.
 
-### Weak observation
+### Reactive subscriptions
 
-`BluetoothManager` stores observers weakly. `FileTransferService` also stores its observers weakly.
+Consumers own their Combine subscriptions in `Set<AnyCancellable>` collections. Subscription closures capture presentation/service objects weakly, so the event stream does not extend their lifetime. When a consumer is deallocated, its `AnyCancellable` values are deallocated and the subscriptions cancel automatically.
 
-This is deliberate: event sources must not keep presentation objects alive.
+`BluetoothManager` owns a private `PassthroughSubject<BluetoothEvent, Never>` and exposes only `AnyPublisher<BluetoothEvent, Never>`. `FileTransferService` owns a private `CurrentValueSubject<FileTransferState, Never>` and likewise exposes only an erased publisher.
 
-When removing an observer asynchronously, the implementation must avoid retaining a deinitializing object. Capture an `ObjectIdentifier` rather than capturing the observer strongly inside an async closure.
+The former Bluetooth weak-observer API has been removed. The Combine publisher is now the sole event-delivery mechanism from the transport to application consumers.
 
 ---
 
@@ -262,44 +263,54 @@ The queue serializes `CBCentralManager` delegate callbacks, connection state, di
 
 Presentation models such as `AppCoordinator`, `BluetoothConnectionController`, and feature ViewModels use `@MainActor`.
 
-`BluetoothManager` translates CoreBluetooth callbacks into `BluetoothEvent` values and delivers observer notifications on the main queue.
+`BluetoothManager` translates CoreBluetooth callbacks into `BluetoothEvent` values and publishes them on the main queue. This preserves the project rule that `@MainActor` presentation consumers receive UI-facing events on the main execution context.
 
 ---
 
 ## 8. Event flow
 
-The application uses a small observer/event abstraction rather than exposing delegate callbacks outside the BLE layer.
-
-Conceptually:
+The application uses Combine as the event boundary between the CoreBluetooth transport and its consumers. CoreBluetooth delegates remain private to `BluetoothManager`; consumers receive application-level `BluetoothEvent` values instead.
 
 ```swift
-protocol BluetoothObserving: AnyObject {
-    func bluetoothManager(
-        _ manager: any BluetoothManaging,
-        didReceive event: BluetoothEvent
-    )
+protocol BluetoothEventProviding: AnyObject {
+    var events: AnyPublisher<BluetoothEvent, Never> { get }
 }
 ```
+
+`BluetoothManager` owns the subject privately:
+
+```swift
+private let eventSubject =
+    PassthroughSubject<BluetoothEvent, Never>()
+
+var events: AnyPublisher<BluetoothEvent, Never> {
+    eventSubject.eraseToAnyPublisher()
+}
+```
+
+`PassthroughSubject` is intentional because `BluetoothEvent` represents transient occurrences; a newly-created subscriber should not receive an old discovery, write-completion, or disconnect event.
 
 ```mermaid
 sequenceDiagram
     participant P as BLE Peripheral
     participant CB as CoreBluetooth
     participant BM as BluetoothManager
-    participant VM as ViewModel / Controller
+    participant C as Combine Publisher
+    participant VM as ViewModel / Service
     participant UI as SwiftUI View
 
     P->>CB: BLE activity
-    CB->>BM: Delegate callback
+    CB->>BM: Delegate callback on bluetoothQueue
     BM->>BM: Update serialized BLE state
-    BM->>VM: BluetoothEvent
-    VM->>VM: Convert event into presentation state
-    VM-->>UI: Observation invalidates view
+    BM->>C: send(BluetoothEvent) on main queue
+    C->>VM: Focused subscription
+    VM->>VM: Convert event into state
+    VM-->>UI: Swift Observation invalidates view
 ```
 
-Typical events include state changes, discovery, connection, disconnection, GATT discovery, value updates, write completion, notification-state changes, and errors.
+Consumers create focused pipelines with `compactMap` for only the event families they need. `ScannerViewModel`, `BluetoothConnectionController`, `DeviceViewModel`, `FileTransferService`, and `FileTransferViewModel` all use this path. Commands remain imperative methods on `BluetoothManaging`; Combine is used for asynchronous streams, not as a replacement for every operation.
 
-The event model is Combine-agnostic. A Combine publisher can be added later as an adapter without changing the CoreBluetooth boundary.
+`FileTransferService` separately publishes durable protocol state through `AnyPublisher<FileTransferState, Never>` backed by `CurrentValueSubject`, allowing `FileTransferViewModel` to receive the current transfer state immediately when it subscribes.
 
 ---
 
@@ -375,7 +386,7 @@ A new feature should normally follow this sequence:
 3. keep the CoreBluetooth operation inside `BluetoothManager`;
 4. expose any higher-level domain protocol outside the transport when needed;
 5. create a feature ViewModel that depends on `BluetoothManaging` or a narrower capability;
-6. observe `BluetoothEvent` rather than CoreBluetooth delegates;
+6. subscribe to `BluetoothManaging.events` and filter the `BluetoothEvent` values needed by the feature;
 7. add a SwiftUI view;
 8. add navigation through `AppCoordinator` when a new route is needed.
 
@@ -394,7 +405,7 @@ If the feature introduces a protocol on top of GATT, follow the same pattern as 
 - Protocol-level features do not leak into `BluetoothManager`.
 - BLE mutable state stays on the dedicated serial queue.
 - Presentation state stays on the main actor.
-- Observers are weak.
+- Combine sinks capture owners weakly and subscriptions are retained in `Set<AnyCancellable>`.
 - Use explicit state rather than multiple loosely-related booleans.
 - Favor readable Swift over clever abstractions.
 - Add protocols at meaningful boundaries, not around every class.
@@ -403,7 +414,7 @@ If the feature introduces a protocol on top of GATT, follow the same pattern as 
 
 ## 14. Related documentation
 
-- [`BLUETOOTH_ARCHITECTURE.md`](./BLUETOOTH_ARCHITECTURE.md) — CoreBluetooth transport, lifecycle, GATT, reconnection, observers.
+- [`BLUETOOTH_ARCHITECTURE.md`](./BLUETOOTH_ARCHITECTURE.md) — CoreBluetooth transport, lifecycle, GATT, reconnection, and Combine event delivery.
 - [`FILE_TRANSFER.md`](./FILE_TRANSFER.md) — BLE-MIRABILIS-BLUE upload/download protocol and state machines.
 - Firmware Developer Guide v0.6.2 — peripheral behavior and protocol source of truth.
 - GATT Reference v0.6.2 — characteristic-level firmware contract.

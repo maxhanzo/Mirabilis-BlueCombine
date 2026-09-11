@@ -15,14 +15,6 @@ protocol BluetoothManaging:
     BluetoothEventProviding {
 }
 
-protocol BluetoothObserving: AnyObject {
-
-    func bluetoothManager(
-        _ manager: any BluetoothManaging,
-        didReceive event: BluetoothEvent
-    )
-}
-
 protocol BluetoothScanning: AnyObject {
 
     func startScanning()
@@ -53,14 +45,6 @@ protocol BluetoothGATTAccessing: AnyObject {
 }
 
 protocol BluetoothEventProviding: AnyObject {
-    
-    var events: AnyPublisher<BluetoothEvent, Never> { get }
-    
-    func addObserver(
-        _ observer: BluetoothObserving
-    )
 
-    func removeObserver(
-        _ observer: BluetoothObserving
-    )
+    var events: AnyPublisher<BluetoothEvent, Never> { get }
 }

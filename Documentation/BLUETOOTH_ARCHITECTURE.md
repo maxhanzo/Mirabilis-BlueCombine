@@ -84,8 +84,7 @@ protocol BluetoothGATTAccessing: AnyObject {
 }
 
 protocol BluetoothEventProviding: AnyObject {
-    func addObserver(_ observer: BluetoothObserving)
-    func removeObserver(_ observer: BluetoothObserving)
+    var events: AnyPublisher<BluetoothEvent, Never> { get }
 }
 
 protocol BluetoothManaging:
@@ -111,7 +110,7 @@ It owns:
 - discovered `CBPeripheral` objects;
 - the connected `CBPeripheral`;
 - discovered `CBCharacteristic` objects;
-- weak observers.
+- a private `PassthroughSubject<BluetoothEvent, Never>` used to publish app-level BLE events.
 
 Its implementation is split across focused extension files, for example:
 
@@ -402,31 +401,31 @@ notificationStateChanged
 error
 ```
 
-Consumers implement:
+`BluetoothManager.emit(_:)` dispatches to the main queue before sending the event through its private subject. No additional `.receive(on:)` is currently required by the `@MainActor` consumers because the publisher boundary preserves the existing main-queue delivery semantics.
+
+Consumers subscribe through:
 
 ```swift
-BluetoothObserving
+var events: AnyPublisher<BluetoothEvent, Never>
 ```
 
-This keeps the transport independent of SwiftUI and Combine and allows multiple features to observe the same app-scoped manager.
+The concrete subject remains private to `BluetoothManager`. `PassthroughSubject` is used because these values are events, not replayable current state. This keeps CoreBluetooth isolated while allowing multiple consumers to independently filter the same app-scoped event stream.
 
 ---
 
-## 15. Observer ownership
+## 15. Combine subscription ownership
 
-The BLE manager keeps observer references weakly.
+Each consumer stores subscriptions in a `Set<AnyCancellable>` and uses weak captures in `sink` closures. The subscription lifetime therefore follows the consumer lifetime without explicit `removeObserver` calls.
 
-Conceptually:
+Current subscribers are:
 
-```swift
-private final class WeakBluetoothObserver {
-    weak var value: BluetoothObserving?
-}
-```
+- `ScannerViewModel` — discovery, connection, errors;
+- `BluetoothConnectionController` — connection, disconnection, Bluetooth state, errors;
+- `DeviceViewModel` — characteristic discovery, value updates, write completion, notification state, disconnection, errors;
+- `FileTransferService` — File Transfer TX notification state/data, disconnection, errors;
+- `FileTransferViewModel` — connection lifecycle, Total Uploaded Bytes updates, errors.
 
-This prevents an event source from keeping feature ViewModels alive.
-
-When observer removal is dispatched asynchronously, do not capture the observer strongly from `deinit`. Capture its `ObjectIdentifier` before scheduling the removal.
+The former custom observer layer has been removed. `events` is now the single transport-to-application event path, so consumers require no explicit registration or removal lifecycle.
 
 ---
 
@@ -592,14 +591,14 @@ When adding a new characteristic:
 2. declare its service;
 3. declare supported read/write/notify behavior;
 4. use generic manager operations where possible;
-5. consume `BluetoothEvent` in the feature;
+5. consume `BluetoothEvent` through focused Combine subscriptions in the feature;
 6. do not add feature-specific protocol parsing to `BluetoothManager`.
 
 When adding a new protocol over BLE:
 
 - keep CoreBluetooth in `BluetoothManager`;
 - add a separate protocol service above it;
-- let that service observe `BluetoothEvent`;
+- let that service subscribe to `BluetoothManaging.events` and filter the protocol-relevant `BluetoothEvent` values;
 - expose protocol-level state/errors to its feature ViewModel.
 
 `FileTransferService` is the reference implementation of this pattern.

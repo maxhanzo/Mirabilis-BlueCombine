@@ -1,8 +1,8 @@
 # Mirabilis Blue --- iOS BLE Client
 
 A native iOS application demonstrating how to build a structured,
-production-oriented Bluetooth Low Energy client using **Swift, SwiftUI
-and CoreBluetooth**.
+production-oriented Bluetooth Low Energy client using **Swift, SwiftUI,
+Combine and CoreBluetooth**.
 
 This project accompanies the **Connected Devices for Mobile Engineers**
 article series and communicates with the **BLE-MIRABILIS-BLUE**
@@ -45,6 +45,8 @@ The iOS application demonstrates:
 -   Bidirectional file transfer over GATT
 -   Transfer progress and protocol state management
 -   Clean separation between CoreBluetooth and the presentation layer
+-   Reactive BLE event delivery with Combine
+-   Reactive file-transfer state propagation with `CurrentValueSubject`
 
 ------------------------------------------------------------------------
 
@@ -101,6 +103,40 @@ operations:
 BLE callbacks → Bluetooth queue
 Application events → Main actor → UI
 ```
+
+BLE delegate callbacks are translated into `BluetoothEvent` values and
+published through an `AnyPublisher<BluetoothEvent, Never>`. The concrete
+`PassthroughSubject` remains private to `BluetoothManager`, so consumers
+subscribe to a read-only stream rather than depending on the publisher
+implementation.
+
+Feature ViewModels remain `@Observable`: **Combine is used for long-lived
+event streams, while Swift Observation remains responsible for
+ViewModel-to-SwiftUI rendering.** Commands such as scan, connect, read,
+write and notification changes remain explicit method calls.
+
+`FileTransferService` follows the same separation but publishes its current
+`FileTransferState` through a `CurrentValueSubject`, because transfer state
+is durable state that a new subscriber should receive immediately.
+
+### Reactive event delivery
+
+The current application consumers use Combine subscriptions rather than the
+original custom observer callbacks:
+
+``` text
+BluetoothManager.events
+    ├── ScannerViewModel
+    ├── BluetoothConnectionController
+    ├── DeviceViewModel
+    ├── FileTransferService
+    └── FileTransferViewModel
+
+FileTransferService.states
+    └── FileTransferViewModel
+```
+
+The legacy Bluetooth observer layer has been removed. Event delivery now uses a single Combine path from `BluetoothManager.events` to its consumers, eliminating manual observer registration, weak-wrapper bookkeeping, and duplicate fan-out logic.
 
 For more detail, see:
 

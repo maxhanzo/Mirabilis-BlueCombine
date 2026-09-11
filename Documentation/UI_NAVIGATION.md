@@ -292,7 +292,7 @@ sequenceDiagram
     BLE->>FW: GATT Read
 
     FW-->>BLE: value
-    BLE-->>VM: BluetoothEvent.valueUpdated
+    BLE-->>VM: Combine publishes BluetoothEvent.valueUpdated
     VM->>VM: update presentation state
     VM-->>View: observable state changes
 ```
@@ -734,6 +734,8 @@ After reconnecting, the File Transfer screen can become interactive again.
 
 The architecture deliberately uses different mechanisms for different responsibilities.
 
+The current reactive split is intentional: Combine carries long-lived BLE and file-transfer streams into presentation/service objects, while Swift Observation (`@Observable`) carries resulting ViewModel state into SwiftUI. User commands and navigation callbacks remain explicit imperative calls.
+
 ### SwiftUI → ViewModel
 
 Direct method calls:
@@ -756,13 +758,27 @@ Protocol calls through:
 BluetoothManaging
 ```
 
-### BLE → ViewModel
+### BLE → ViewModel / service
 
-Observer events:
+Combine event stream:
 
 ```text
-BluetoothEvent
+BluetoothManaging.events
+    → AnyPublisher<BluetoothEvent, Never>
 ```
+
+Feature consumers filter only the event families they need.
+
+### FileTransferService → FileTransferViewModel
+
+Current transfer state is published separately:
+
+```text
+FileTransferService.states
+    → AnyPublisher<FileTransferState, Never>
+```
+
+Because this represents current state rather than a transient event, the service uses `CurrentValueSubject`.
 
 ### ViewModel → View
 
@@ -803,7 +819,7 @@ flowchart LR
     VM[Feature ViewModel]
     SERVICE[Feature Service]
     BLE[BluetoothManaging]
-    EVENT[BluetoothEvent]
+    EVENT[Combine BluetoothEvent stream]
     COORD[AppCoordinator]
 
     USER --> VIEW
@@ -919,5 +935,5 @@ flowchart TD
 ## 27. Related documentation
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md) — overall application architecture.
-- [`BLUETOOTH_ARCHITECTURE.md`](./BLUETOOTH_ARCHITECTURE.md) — CoreBluetooth lifecycle, GATT, observers, reconnection.
+- [`BLUETOOTH_ARCHITECTURE.md`](./BLUETOOTH_ARCHITECTURE.md) — CoreBluetooth lifecycle, GATT, Combine event delivery, reconnection.
 - [`FILE_TRANSFER.md`](./FILE_TRANSFER.md) — upload/download protocol and state machines.

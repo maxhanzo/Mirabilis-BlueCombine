@@ -33,15 +33,41 @@ Owns BLE transport only: characteristic reads/writes, notification subscriptions
 
 ### `FileTransferService`
 
-Owns protocol behavior: commands, chunking, sequence numbers, ACK/NACK/CAN, batching, download reconstruction, transfer state, and protocol errors.
+Owns protocol behavior: commands, chunking, sequence numbers, ACK/NACK/CAN, batching, download reconstruction, transfer state, and protocol errors. It subscribes to `BluetoothManaging.events` for transfer-relevant BLE events and publishes its current `FileTransferState` through Combine.
 
 ### `FileTransferViewModel`
 
-Owns feature presentation logic: selected file, validation, connection gating, progress/status text, cumulative upload statistics, and downloaded-data export.
+Owns feature presentation logic: selected file, validation, connection gating, progress/status text, cumulative upload statistics, and downloaded-data export. It subscribes to both `BluetoothManaging.events` and `FileTransferService.states`.
 
 ---
 
-## 2. GATT transport
+## 2. Reactive state and event flow
+
+File transfer uses two different Combine semantics deliberately:
+
+```text
+BluetoothManager.events
+    AnyPublisher<BluetoothEvent, Never>
+    backed by PassthroughSubject
+    ↓
+FileTransferService
+    ↓
+FileTransferService.states
+    AnyPublisher<FileTransferState, Never>
+    backed by CurrentValueSubject
+    ↓
+FileTransferViewModel
+```
+
+`BluetoothEvent` is transient, so it is not replayed to new subscribers. `FileTransferState` is durable current state, so `CurrentValueSubject` is appropriate: a new subscriber immediately receives the service's current state.
+
+`FileTransferService` filters only the BLE events relevant to the protocol: File Transfer TX notification-state changes, File Transfer TX values, disconnections, and Bluetooth errors. The transfer state machine itself remains synchronous and explicit; Combine is the delivery mechanism around it, not a replacement for its protocol logic.
+
+`FileTransferViewModel` also independently subscribes to connection lifecycle and `Total Uploaded Bytes` value updates because those concerns belong to feature presentation/statistics rather than the transfer protocol service.
+
+---
+
+## 3. GATT transport
 
 | Name | UUID suffix | GATT operation | Direction |
 |---|---:|---|---|
@@ -58,7 +84,7 @@ Statistics use:
 
 ---
 
-## 3. Protocol constants
+## 4. Protocol constants
 
 | Value | Name | Meaning |
 |---:|---|---|
@@ -81,7 +107,7 @@ Sequence number          UInt8
 
 ---
 
-## 4. Chunk format
+## 5. Chunk format
 
 ```text
 +---------+----------+----------------------+
@@ -103,7 +129,7 @@ Rollover is valid and must not be treated as corruption.
 
 ---
 
-## 5. Upload command
+## 6. Upload command
 
 Upload starts with:
 
@@ -121,7 +147,7 @@ Offset  Size  Field
 
 ---
 
-## 6. Upload sequence
+## 7. Upload sequence
 
 ```text
 iOS Central                          Peripheral
@@ -146,7 +172,7 @@ The app subscribes to File Transfer TX before starting so asynchronous responses
 
 ---
 
-## 7. Upload state machine
+## 8. Upload state machine
 
 ```mermaid
 stateDiagram-v2
@@ -172,7 +198,7 @@ totalBytes
 
 ---
 
-## 8. Upload batching
+## 9. Upload batching
 
 The sender transmits up to eight chunks before waiting for an ACK.
 
@@ -200,7 +226,7 @@ The final ETX chunk is always acknowledged.
 
 ---
 
-## 9. Download command
+## 10. Download command
 
 Download begins with one byte:
 
@@ -212,7 +238,7 @@ The central must subscribe to File Transfer TX before sending it.
 
 ---
 
-## 10. Download sequence
+## 11. Download sequence
 
 ```text
 iOS Central                          Peripheral
@@ -237,7 +263,7 @@ Downloaded payload bytes are concatenated in sequence order.
 
 ---
 
-## 11. Download state machine
+## 12. Download state machine
 
 ```mermaid
 stateDiagram-v2
@@ -256,7 +282,7 @@ The protocol does not provide total download size before sending chunks, so down
 
 ---
 
-## 12. Download reconstruction
+## 13. Download reconstruction
 
 The service stores:
 
@@ -279,7 +305,7 @@ It then appends payload, advances the sequence with wrapping arithmetic, updates
 
 ---
 
-## 13. Completion
+## 14. Completion
 
 ### Upload
 
@@ -311,7 +337,7 @@ mirabilis_download.bin
 
 ---
 
-## 14. Cancellation
+## 15. Cancellation
 
 Cancellation uses:
 
@@ -327,11 +353,11 @@ cancelled
 
 ---
 
-## 15. Disconnect behavior
+## 16. Disconnect behavior
 
 A BLE disconnect aborts an in-progress transfer.
 
-`FileTransferService` observes the disconnect and, when a transfer is active, transitions to:
+`FileTransferService` receives the disconnect through its Combine subscription and, when a transfer is active, transitions to:
 
 ```text
 failed(.disconnected)
@@ -347,7 +373,7 @@ The current protocol has no resume offset or resumable-session metadata. The use
 
 ---
 
-## 16. Peripheral file lifecycle
+## 17. Peripheral file lifecycle
 
 BLE-MIRABILIS-BLUE v0.6.2 stores one file in a fixed RAM-backed slot.
 
@@ -366,7 +392,7 @@ A disconnect aborts the active transfer, but it does not erase a previously comp
 
 ---
 
-## 17. Total Uploaded Bytes
+## 18. Total Uploaded Bytes
 
 Characteristic `...000E` contains a `UInt64` little-endian cumulative count of successful upload payload bytes since boot.
 
@@ -376,7 +402,7 @@ After a successful upload, the ViewModel refreshes it when the connection is ava
 
 ---
 
-## 18. Security
+## 19. Security
 
 The relevant GATT attributes require an encrypted connection:
 
@@ -390,7 +416,7 @@ Pairing/security establishment belongs to the BLE/CoreBluetooth layer, not to th
 
 ---
 
-## 19. Error model
+## 20. Error model
 
 `FileTransferError` separates protocol failures from transport failures.
 
@@ -421,7 +447,7 @@ The reverse dependency must not exist.
 
 ---
 
-## 20. NACK handling
+## 21. NACK handling
 
 A NACK indicates that the receiver rejected a batch or chunk.
 
@@ -435,7 +461,7 @@ Automatic retransmission is not currently implemented. If added later, it belong
 
 ---
 
-## 21. File-size validation
+## 22. File-size validation
 
 Maximum supported file size:
 
@@ -453,7 +479,7 @@ This is deliberate defense in depth.
 
 ---
 
-## 22. Connection-aware UI
+## 23. Connection-aware UI
 
 `FileTransferViewModel` gates operations using shared connection state.
 
@@ -471,7 +497,7 @@ Actions also guard connectivity before invoking protocol work, while `BluetoothM
 
 ---
 
-## 23. Upload event flow
+## 24. Upload event flow
 
 ```mermaid
 sequenceDiagram
@@ -502,7 +528,7 @@ sequenceDiagram
 
 ---
 
-## 24. Download event flow
+## 25. Download event flow
 
 ```mermaid
 sequenceDiagram
@@ -534,7 +560,7 @@ sequenceDiagram
 
 ---
 
-## 25. Known design limitations / future improvements
+## 26. Known design limitations / future improvements
 
 Potential extensions include:
 
@@ -552,7 +578,7 @@ These belong in `FileTransferService` or another protocol-specific layer, not in
 
 ---
 
-## 26. Related documentation
+## 27. Related documentation
 
 - [`ARCHITECTURE.md`](./ARCHITECTURE.md)
 - [`BLUETOOTH_ARCHITECTURE.md`](./BLUETOOTH_ARCHITECTURE.md)

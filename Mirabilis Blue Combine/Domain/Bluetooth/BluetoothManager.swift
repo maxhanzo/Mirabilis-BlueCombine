@@ -49,9 +49,6 @@ final class BluetoothManager: NSObject, BluetoothManaging {
         MirabilisUUID.Characteristic: CBCharacteristic
     ] = [:]
 
-    private var observers: [
-        WeakBluetoothObserver
-    ] = []
 
     override init() {
         super.init()
@@ -68,97 +65,13 @@ final class BluetoothManager: NSObject, BluetoothManaging {
     }
 }
 
-// MARK: - Weak Observer
-
-private final class WeakBluetoothObserver {
-
-    weak var value: BluetoothObserving?
-
-    init(_ value: BluetoothObserving) {
-        self.value = value
-    }
-}
-
-// MARK: - Observer Management
-
-extension BluetoothManager {
-
-    func addObserver(
-        _ observer: BluetoothObserving
-    ) {
-        bluetoothQueue.async { [weak self] in
-            guard let self else {
-                return
-            }
-
-            self.removeReleasedObservers()
-
-            let alreadyExists = self.observers.contains {
-                guard let value = $0.value else {
-                    return false
-                }
-
-                return ObjectIdentifier(value)
-                    == ObjectIdentifier(observer)
-            }
-
-            guard !alreadyExists else {
-                return
-            }
-
-            self.observers.append(
-                WeakBluetoothObserver(observer)
-            )
-        }
-    }
-
-    func removeObserver(
-        _ observer: BluetoothObserving
-    ) {
-        let observerID =
-            ObjectIdentifier(observer)
-
-        bluetoothQueue.async { [weak self] in
-            guard let self else {
-                return
-            }
-
-            self.observers.removeAll {
-                guard let value = $0.value else {
-                    return true
-                }
-
-                return ObjectIdentifier(value)
-                    == observerID
-            }
-        }
-    }
-
-    private func removeReleasedObservers() {
-        observers.removeAll {
-            $0.value == nil
-        }
-    }
-}
-
 // MARK: - Event Delivery
 
 extension BluetoothManager {
 
     func emit(_ event: BluetoothEvent) {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-
-            // New Combine path
-            eventSubject.send(event)
-
-            // Existing observer path — temporary
-            observers.forEach {
-                $0.value?.bluetoothManager(
-                    self,
-                    didReceive: event
-                )
-            }
+            self?.eventSubject.send(event)
         }
     }
 }
