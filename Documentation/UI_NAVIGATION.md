@@ -734,7 +734,7 @@ After reconnecting, the File Transfer screen can become interactive again.
 
 The architecture deliberately uses different mechanisms for different responsibilities.
 
-The current reactive split is intentional: Combine carries long-lived BLE and file-transfer streams into presentation/service objects, while Swift Observation (`@Observable`) carries resulting ViewModel state into SwiftUI. User commands and navigation callbacks remain explicit imperative calls.
+The current reactive split is intentional: Combine carries long-lived BLE and file-transfer streams into presentation/service objects, while `ObservableObject` and `@Published` carry resulting ViewModel state into SwiftUI. User commands and navigation callbacks remain explicit imperative calls.
 
 ### SwiftUI → ViewModel
 
@@ -782,12 +782,12 @@ Because this represents current state rather than a transient event, the service
 
 ### ViewModel → View
 
-Swift Observation:
+Combine-backed SwiftUI observation:
 
 ```text
-@Observable
+ObservableObject
 @State
-@Bindable
+@ObservedObject / @StateObject
 ```
 
 ### Feature → Navigation

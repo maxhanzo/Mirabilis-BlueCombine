@@ -8,12 +8,10 @@
 import Combine
 import CoreBluetooth
 import Foundation
-import Observation
 import OSLog
 
 @MainActor
-@Observable
-final class BluetoothConnectionController {
+final class BluetoothConnectionController: ObservableObject {
 
     enum State: Equatable {
         case disconnected
@@ -24,21 +22,23 @@ final class BluetoothConnectionController {
     private let bluetoothManager:
         BluetoothManaging
 
-    @ObservationIgnored
     private var cancellables =
         Set<AnyCancellable>()
 
+    @Published
     private(set) var state:
         State = .disconnected
 
+    @Published
     private(set) var lastConnectedDevice:
         BluetoothDevice?
 
+    @Published
     private(set) var isReconnecting = false
     
+    @Published
     var shouldPresentReconnectAlert = false
 
-    @ObservationIgnored
     private var intentionalDisconnectDeviceID:
         UUID?
 

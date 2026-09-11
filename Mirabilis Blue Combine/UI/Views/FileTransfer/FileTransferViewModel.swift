@@ -8,12 +8,10 @@
 import Combine
 import CoreBluetooth
 import Foundation
-import Observation
 import OSLog
 
 @MainActor
-@Observable
-final class FileTransferViewModel {
+final class FileTransferViewModel: ObservableObject {
 
     // MARK: - Dependencies
 
@@ -26,7 +24,6 @@ final class FileTransferViewModel {
     private let connectionController:
         BluetoothConnectionController
 
-    @ObservationIgnored
     private var cancellables =
         Set<AnyCancellable>()
 
@@ -36,22 +33,27 @@ final class FileTransferViewModel {
 
     // MARK: - Statistics
 
+    @Published
     private(set) var totalUploadedBytes:
         UInt64?
 
+    @Published
     private(set) var
         isReadingTotalUploadedBytes = false
 
     // MARK: - File Selection
 
+    @Published
     private(set) var selectedFile:
         SelectedFile?
 
     // MARK: - Download Export
 
+    @Published
     private(set) var downloadedData:
         Data?
 
+    @Published
     var isFileExporterPresented = false
 
     let defaultDownloadFilename =
@@ -59,14 +61,18 @@ final class FileTransferViewModel {
 
     // MARK: - Transfer
 
+    @Published
     private(set) var transferState:
         FileTransferState = .idle
 
+    @Published
     private(set) var errorMessage:
         String?
 
-    @ObservationIgnored
     private var hasLoaded = false
+
+    @Published
+    private(set) var isConnected: Bool
 
     init(
         device: BluetoothDevice,
@@ -83,6 +89,9 @@ final class FileTransferViewModel {
         self.connectionController =
             connectionController
 
+        self.isConnected =
+            connectionController.isConnected
+
         let fileTransferService =
             FileTransferService(
                 bluetoothManager:
@@ -92,6 +101,7 @@ final class FileTransferViewModel {
         self.fileTransferService =
             fileTransferService
 
+        bindConnectionState()
         bindFileTransferState()
         bindBluetoothEvents()
 
@@ -101,13 +111,25 @@ final class FileTransferViewModel {
     }
 }
 
-// MARK: - Connection
+// MARK: - Connection State Binding
 
-extension FileTransferViewModel {
+private extension FileTransferViewModel {
 
-    var isConnected: Bool {
-        connectionController
-            .isConnected
+    func bindConnectionState() {
+        connectionController.$state
+            .map { state in
+                if case .connected = state {
+                    return true
+                }
+
+                return false
+            }
+            .removeDuplicates()
+            .sink { [weak self] isConnected in
+                self?.isConnected =
+                    isConnected
+            }
+            .store(in: &cancellables)
     }
 }
 

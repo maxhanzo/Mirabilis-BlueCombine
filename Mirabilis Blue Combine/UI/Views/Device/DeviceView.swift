@@ -10,11 +10,26 @@ import SwiftUI
 
 struct DeviceView: View {
 
-    @State var viewModel: DeviceViewModel
+    @StateObject
+    private var viewModel: DeviceViewModel
     @State private var isDisconnectAlertPresented = false
     
     let onFileTransferTapped: () -> Void
     let onDisconnectConfirmed: () -> Void
+
+    init(
+        viewModel: DeviceViewModel,
+        onFileTransferTapped: @escaping () -> Void,
+        onDisconnectConfirmed: @escaping () -> Void
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: viewModel
+        )
+        self.onFileTransferTapped =
+            onFileTransferTapped
+        self.onDisconnectConfirmed =
+            onDisconnectConfirmed
+    }
 
     var body: some View {
         List {

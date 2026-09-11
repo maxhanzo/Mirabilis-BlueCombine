@@ -5,12 +5,11 @@
 //  Created by Max Ueda on 31/08/26.
 //
 
+import Combine
 import Foundation
-import Observation
 
 @MainActor
-@Observable
-final class AppCoordinator {
+final class AppCoordinator: ObservableObject {
     // MARK: - Route
 
     enum Route: Hashable {
@@ -28,6 +27,7 @@ final class AppCoordinator {
 
     // MARK: - Navigation
 
+    @Published
     var path: [Route] = []
 
     // MARK: - ViewModels

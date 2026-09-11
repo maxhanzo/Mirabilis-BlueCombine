@@ -110,10 +110,12 @@ published through an `AnyPublisher<BluetoothEvent, Never>`. The concrete
 subscribe to a read-only stream rather than depending on the publisher
 implementation.
 
-Feature ViewModels remain `@Observable`: **Combine is used for long-lived
-event streams, while Swift Observation remains responsible for
-ViewModel-to-SwiftUI rendering.** Commands such as scan, connect, read,
-write and notification changes remain explicit method calls.
+Feature ViewModels and presentation controllers now conform to
+`ObservableObject`: **Combine is used both for long-lived event streams and
+for publishing UI-facing state through `@Published`.** SwiftUI observes these
+objects with `@ObservedObject` or `@StateObject` according to ownership.
+Commands such as scan, connect, read, write and notification changes remain
+explicit method calls.
 
 `FileTransferService` follows the same separation but publishes its current
 `FileTransferState` through a `CurrentValueSubject`, because transfer state
@@ -137,6 +139,26 @@ FileTransferService.states
 ```
 
 The legacy Bluetooth observer layer has been removed. Event delivery now uses a single Combine path from `BluetoothManager.events` to its consumers, eliminating manual observer registration, weak-wrapper bookkeeping, and duplicate fan-out logic.
+
+### Combine UI migration
+
+The presentation layer has also completed its first Combine migration phase.
+`AppCoordinator`, `BluetoothConnectionController`, `ScannerViewModel`,
+`DeviceViewModel`, and `FileTransferViewModel` conform to `ObservableObject`.
+Mutable state consumed by SwiftUI is exposed with `@Published`.
+
+Views use ownership-aware wrappers:
+
+- `@ObservedObject` when the object is owned elsewhere, such as the
+  coordinator-owned scanner ViewModel;
+- `@StateObject` when the view owns a factory-created ViewModel, such as
+  `DeviceView` and `FileTransferView`.
+
+This distinction preserves ViewModel lifetime across SwiftUI body
+reevaluations and navigation. File transfer also subscribes explicitly to
+`BluetoothConnectionController.$state`, because nested `ObservableObject`
+changes are not automatically forwarded by SwiftUI.
+
 
 For more detail, see:
 

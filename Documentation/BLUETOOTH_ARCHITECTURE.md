@@ -170,7 +170,7 @@ main queue
 - mutate transport dictionaries from the main actor;
 - call CoreBluetooth from arbitrary feature queues;
 - expose `CBPeripheral` or `CBCharacteristic` to SwiftUI;
-- update an `@Observable @MainActor` ViewModel directly from the BLE queue.
+- update a `@MainActor ObservableObject` ViewModel directly from the BLE queue.
 
 ---
 
@@ -414,6 +414,19 @@ The concrete subject remains private to `BluetoothManager`. `PassthroughSubject`
 ---
 
 ## 15. Combine subscription ownership
+
+### Presentation subscribers
+
+Bluetooth-facing presentation objects are `ObservableObject` types. Their
+Combine subscriptions consume `BluetoothManaging.events`, while resulting
+UI-facing state is exposed with `@Published`. SwiftUI observes those objects
+through `@ObservedObject` or `@StateObject` according to ownership.
+
+The subscription boundary and the UI-observation boundary therefore both use
+Combine primitives, while CoreBluetooth remains isolated behind
+`BluetoothManaging`.
+
+
 
 Each consumer stores subscriptions in a `Set<AnyCancellable>` and uses weak captures in `sink` closures. The subscription lifetime therefore follows the consumer lifetime without explicit `removeObserver` calls.
 

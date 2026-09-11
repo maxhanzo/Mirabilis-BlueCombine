@@ -11,9 +11,18 @@ import UniformTypeIdentifiers
 
 struct FileTransferView: View {
 
-    @State var viewModel: FileTransferViewModel
+    @StateObject
+    private var viewModel: FileTransferViewModel
 
     @State private var isFileImporterPresented = false
+
+    init(
+        viewModel: FileTransferViewModel
+    ) {
+        _viewModel = StateObject(
+            wrappedValue: viewModel
+        )
+    }
 
     var body: some View {
         List {

@@ -20,7 +20,7 @@ The main goals are:
 - deliver presentation-facing changes on the main actor;
 - model BLE and file-transfer behavior with explicit state and events;
 - prevent retain cycles through explicit ownership and cancellable Combine subscriptions;
-- use Combine for long-lived BLE/service streams while keeping Swift Observation for ViewModel-to-SwiftUI updates;
+- use Combine for long-lived BLE/service streams and `ObservableObject`/`@Published` for ViewModel-to-SwiftUI updates;
 - expose publishers as `AnyPublisher` so subjects remain implementation details.
 
 The application follows an MVVM + Coordinator style with a lightweight Clean Architecture separation between Presentation, Domain/Support types, and Infrastructure.
@@ -267,6 +267,45 @@ Presentation models such as `AppCoordinator`, `BluetoothConnectionController`, a
 
 ---
 
+## 7.1 Combine presentation state
+
+Phase 1 of the UI migration replaces the previous presentation observation mechanism in the
+layer. Presentation objects now conform to `ObservableObject`, and mutable
+state consumed by SwiftUI is marked `@Published`.
+
+Ownership is explicit at the view boundary:
+
+- use `@ObservedObject` for objects whose lifetime is managed elsewhere;
+- use `@StateObject` for a ViewModel instance owned by the view.
+
+This matters for factory-created navigation destinations. `DeviceView` and
+`FileTransferView` use `@StateObject` so their ViewModels survive body
+reevaluation while the destination remains in the navigation stack.
+`ScannerView` uses `@ObservedObject` because `AppCoordinator` owns its
+`ScannerViewModel`.
+
+Nested `ObservableObject` state is not implicitly forwarded. Where a
+ViewModel needs another observable object's changing state,
+it subscribes explicitly. For example, `FileTransferViewModel` maps
+`BluetoothConnectionController.$state` into its own published
+`isConnected` property.
+
+The resulting presentation flow is:
+
+```text
+Combine service/event publishers
+        ↓
+ObservableObject ViewModel / controller
+        ↓
+@Published UI state
+        ↓
+@StateObject / @ObservedObject
+        ↓
+SwiftUI
+```
+
+Commands and navigation callbacks remain explicit imperative operations.
+
 ## 8. Event flow
 
 The application uses Combine as the event boundary between the CoreBluetooth transport and its consumers. CoreBluetooth delegates remain private to `BluetoothManager`; consumers receive application-level `BluetoothEvent` values instead.
@@ -305,7 +344,7 @@ sequenceDiagram
     BM->>C: send(BluetoothEvent) on main queue
     C->>VM: Focused subscription
     VM->>VM: Convert event into state
-    VM-->>UI: Swift Observation invalidates view
+    VM-->>UI: @Published invalidates observing SwiftUI view
 ```
 
 Consumers create focused pipelines with `compactMap` for only the event families they need. `ScannerViewModel`, `BluetoothConnectionController`, `DeviceViewModel`, `FileTransferService`, and `FileTransferViewModel` all use this path. Commands remain imperative methods on `BluetoothManaging`; Combine is used for asynchronous streams, not as a replacement for every operation.

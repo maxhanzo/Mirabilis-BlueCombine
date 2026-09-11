@@ -63,6 +63,18 @@ FileTransferViewModel
 
 `FileTransferService` filters only the BLE events relevant to the protocol: File Transfer TX notification-state changes, File Transfer TX values, disconnections, and Bluetooth errors. The transfer state machine itself remains synchronous and explicit; Combine is the delivery mechanism around it, not a replacement for its protocol logic.
 
+`FileTransferViewModel` is an `ObservableObject`. Transfer state, statistics,
+selected/downloaded file state, errors, exporter presentation, and connection
+availability are exposed to SwiftUI through `@Published` properties.
+`FileTransferView` owns its factory-created ViewModel with `@StateObject`.
+
+Connection availability deserves special attention: the ViewModel subscribes
+to `BluetoothConnectionController.$state`, maps it to a Boolean connection
+state, removes duplicates, and publishes the result as `isConnected`. This
+explicit subscription replaces the nested dependency tracking previously
+provided by the previous presentation observation mechanism.
+
+
 `FileTransferViewModel` also independently subscribes to connection lifecycle and `Total Uploaded Bytes` value updates because those concerns belong to feature presentation/statistics rather than the transfer protocol service.
 
 ---

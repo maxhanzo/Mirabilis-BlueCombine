@@ -8,8 +8,20 @@
 import SwiftUI
 
 struct AppCoordinatorView: View {
-    @Bindable var coordinator:
-        AppCoordinator
+    @ObservedObject
+    var coordinator: AppCoordinator
+
+    @ObservedObject
+    private var connectionController:
+        BluetoothConnectionController
+
+    init(
+        coordinator: AppCoordinator
+    ) {
+        self.coordinator = coordinator
+        self.connectionController =
+            coordinator.connectionController
+    }
 
     var body: some View {
         ZStack {
@@ -31,7 +43,7 @@ struct AppCoordinatorView: View {
                 }
             }
 
-            if coordinator.isReconnecting {
+            if connectionController.isReconnecting {
                 reconnectingOverlay
                     .zIndex(1)
             }
@@ -44,20 +56,20 @@ struct AppCoordinatorView: View {
             Button(
                 "Reconnect"
             ) {
-                coordinator
-                    .retryBluetoothConnection()
+                connectionController
+                    .retryConnection()
             }
 
             Button(
                 "Cancel",
                 role: .cancel
             ) {
-                coordinator
+                connectionController
                     .dismissReconnectAlert()
             }
         } message: {
             Text(
-                coordinator.reconnectMessage
+                connectionController.reconnectMessage
             )
         }
     }
@@ -70,11 +82,11 @@ private extension AppCoordinatorView {
         Binding<Bool> {
         Binding(
             get: {
-                coordinator
+                connectionController
                     .shouldPresentReconnectAlert
             },
             set: { isPresented in
-                coordinator
+                connectionController
                     .shouldPresentReconnectAlert =
                     isPresented
             }

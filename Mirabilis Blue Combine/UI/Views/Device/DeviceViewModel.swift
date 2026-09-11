@@ -8,12 +8,10 @@
 import Combine
 import CoreBluetooth
 import Foundation
-import Observation
 import OSLog
 
 @MainActor
-@Observable
-final class DeviceViewModel {
+final class DeviceViewModel: ObservableObject {
 
     // MARK: - State
 
@@ -28,7 +26,6 @@ final class DeviceViewModel {
 
     private let bluetoothManager: BluetoothManaging
 
-    @ObservationIgnored
     private var cancellables =
         Set<AnyCancellable>()
 
@@ -38,33 +35,45 @@ final class DeviceViewModel {
 
     // MARK: - Presentation State
 
+    @Published
     private(set) var state: State = .loading
 
+    @Published
     private(set) var serialNumber: String?
+    @Published
     private(set) var hardwareRevision: String?
+    @Published
     private(set) var firmwareRevision: String?
+    @Published
     private(set) var lastWrittenValue: String?
     
+    @Published
     private(set) var observableValue: String?
+    @Published
     private(set) var periodicEventValue: String?
 
+    @Published
     private(set) var notifyingCharacteristics:
         Set<MirabilisUUID.Characteristic> = []
 
+    @Published
     var observableWriteInput = ""
 
+    @Published
     private(set) var characteristics:
         Set<MirabilisUUID.Characteristic> = []
 
+    @Published
     private(set) var readingCharacteristics:
         Set<MirabilisUUID.Characteristic> = []
 
+    @Published
     private(set) var writingCharacteristics:
         Set<MirabilisUUID.Characteristic> = []
 
+    @Published
     var basicWriteInput = ""
     
-    @ObservationIgnored
     var onDisconnected: (() -> Void)?
 
     // MARK: - Init

@@ -7,12 +7,10 @@
 
 import Combine
 import Foundation
-import Observation
 import OSLog
 
 @MainActor
-@Observable
-final class ScannerViewModel {
+final class ScannerViewModel: ObservableObject {
 
     enum State: Equatable {
         case idle
@@ -26,16 +24,15 @@ final class ScannerViewModel {
     private let bluetoothManager: BluetoothManaging
     private var cancellables = Set<AnyCancellable>()
 
-    @ObservationIgnored
     var onConnected: ((BluetoothDevice) -> Void)?
     
     // MARK: - State
 
+    @Published
     private(set) var state: State = .idle
 
     // MARK: - Private
 
-    @ObservationIgnored
     private var scanTimeoutTask: Task<Void, Never>?
 
     // MARK: - Init

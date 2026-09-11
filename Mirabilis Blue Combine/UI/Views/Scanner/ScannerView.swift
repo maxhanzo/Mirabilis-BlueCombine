@@ -9,7 +9,8 @@ import SwiftUI
 
 struct ScannerView: View {
 
-    @State var viewModel: ScannerViewModel
+    @ObservedObject
+    var viewModel: ScannerViewModel
 
     var body: some View {
         VStack {
