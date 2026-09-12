@@ -142,10 +142,12 @@ The legacy Bluetooth observer layer has been removed. Event delivery now uses a 
 
 ### Combine UI migration
 
-The presentation layer has also completed its first Combine migration phase.
+The presentation migration is complete.
 `AppCoordinator`, `BluetoothConnectionController`, `ScannerViewModel`,
 `DeviceViewModel`, and `FileTransferViewModel` conform to `ObservableObject`.
-Mutable state consumed by SwiftUI is exposed with `@Published`.
+Mutable state consumed by SwiftUI is exposed with `@Published`, while Combine
+is used selectively to derive meaningful relationships between changing
+presentation state.
 
 Views use ownership-aware wrappers:
 
@@ -156,8 +158,39 @@ Views use ownership-aware wrappers:
 
 This distinction preserves ViewModel lifetime across SwiftUI body
 reevaluations and navigation. File transfer also subscribes explicitly to
-`BluetoothConnectionController.$state`, because nested `ObservableObject`
-changes are not automatically forwarded by SwiftUI.
+`BluetoothConnectionController.$isConnected`, because nested
+`ObservableObject` changes are not automatically forwarded by SwiftUI.
+
+The final presentation graph deliberately avoids making every property
+reactive. Simple formatting and one-input projections remain computed;
+Combine is reserved for state relationships where it improves clarity and
+consistency.
+
+```text
+BluetoothConnectionController
+$isConnected
+        ↓
+FileTransferViewModel
+        ↓
+isTransferAvailable
+   ├── canChooseFile
+   ├── canDownload
+   ├── canUpload
+   └── canReadStatistics
+
+$transferState + $isConnected
+        ↓
+FileTransferPresentationState
+   ├── statusText
+   ├── uploadProgress
+   ├── uploadProgressText
+   ├── indeterminateProgressText
+   └── isError
+```
+
+Pure BLE/domain value types that are used on the dedicated Bluetooth queue
+are explicitly nonisolated where required by Swift 6 actor-isolation rules.
+The UI-facing layer remains main-actor isolated.
 
 
 For more detail, see:

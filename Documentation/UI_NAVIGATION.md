@@ -380,7 +380,8 @@ Progress / status
 
 The available controls depend on both connection state and `FileTransferState`.
 
-The ViewModel exposes UI-friendly values such as:
+The ViewModel exposes UI-friendly capabilities and a consolidated transfer
+presentation snapshot:
 
 ```text
 canChooseFile
@@ -388,11 +389,16 @@ canReadStatistics
 canUpload
 canDownload
 canCancel
-uploadProgress
-transferStatusText
+
+transferPresentation.statusText
+transferPresentation.uploadProgress
+transferPresentation.uploadProgressText
+transferPresentation.indeterminateProgressText
+transferPresentation.isError
 ```
 
-This means the View does not need to reproduce protocol or connection-state logic.
+This means the View does not need to reproduce protocol, progress, error, or
+connection-state logic.
 
 ---
 
@@ -710,14 +716,20 @@ For example, if the user was on File Transfer before losing the link, a successf
 
 `FileTransferViewModel` is connection-aware.
 
-When disconnected, BLE-dependent actions are unavailable:
+When disconnected, BLE-dependent actions are unavailable. The UI reaches
+that result through shared derived state rather than independently mutating
+five flags:
 
 ```text
-canChooseFile      = false
-canReadStatistics  = false
-canUpload          = false
-canDownload        = false
-canCancel          = false
+isConnected = false
+        ↓
+isTransferAvailable = false
+        ├── canChooseFile = false
+        ├── canDownload = false
+        ├── canUpload = false
+        └── canReadStatistics = false
+
+canCancel = false
 ```
 
 The screen may remain visible, but BLE actions are disabled.

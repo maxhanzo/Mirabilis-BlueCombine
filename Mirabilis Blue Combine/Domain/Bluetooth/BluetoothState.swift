@@ -7,7 +7,7 @@
 
 import Foundation
 
-struct BluetoothState: Equatable {
+nonisolated struct BluetoothState: Equatable {
 
     var availability: Availability
     var activity: Activity

@@ -579,7 +579,7 @@ Example:
 ```text
 File Transfer View
     ↓
-canDownload == connected && !transferInProgress
+canDownload == isTransferAvailable
     ↓
 downloadFile()
     ↓
@@ -593,6 +593,32 @@ guard connected + characteristic
 ```
 
 This is intentional defense in depth.
+
+---
+
+## 21.1 Swift 6 actor isolation
+
+The BLE layer runs CoreBluetooth work on the dedicated serial
+`bluetoothQueue`. Pure BLE/domain value types that participate in that work
+must therefore remain usable from a non-main-actor context.
+
+`MirabilisUUID` and `BluetoothState` are explicitly `nonisolated`. This is
+intentional: they are immutable/value-oriented domain models, not UI state.
+
+```text
+bluetoothQueue
+    ↓
+nonisolated BLE/domain values
+    ↓
+BluetoothManager.emit(...)
+    ↓
+main queue
+    ↓
+@MainActor presentation consumers
+```
+
+The isolation boundary belongs between the transport/event layer and the
+presentation layer, not inside the BLE value types.
 
 ---
 

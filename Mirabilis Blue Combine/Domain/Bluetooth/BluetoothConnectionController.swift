@@ -30,6 +30,9 @@ final class BluetoothConnectionController: ObservableObject {
         State = .disconnected
 
     @Published
+    private(set) var isConnected = false
+
+    @Published
     private(set) var lastConnectedDevice:
         BluetoothDevice?
 
@@ -48,6 +51,7 @@ final class BluetoothConnectionController: ObservableObject {
         self.bluetoothManager = bluetoothManager
 
         bindBluetoothEvents()
+        bindPresentationState()
 
         AppLogger.bluetooth.debug(
             "BluetoothConnectionController initialized"
@@ -58,14 +62,6 @@ final class BluetoothConnectionController: ObservableObject {
 // MARK: - Presentation
 
 extension BluetoothConnectionController {
-
-    var isConnected: Bool {
-        if case .connected = state {
-            return true
-        }
-
-        return false
-    }
 
     var isConnecting: Bool {
         state == .connecting
@@ -84,6 +80,28 @@ extension BluetoothConnectionController {
         \(device.displayName) was lost. \
         Move closer to the device and try again.
         """
+    }
+}
+
+// MARK: - Reactive Presentation State
+
+private extension BluetoothConnectionController {
+
+    func bindPresentationState() {
+        $state
+            .map { state in
+                if case .connected = state {
+                    return true
+                }
+
+                return false
+            }
+            .removeDuplicates()
+            .sink { [weak self] isConnected in
+                self?.isConnected =
+                    isConnected
+            }
+            .store(in: &cancellables)
     }
 }
 

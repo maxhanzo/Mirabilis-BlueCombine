@@ -269,9 +269,10 @@ Presentation models such as `AppCoordinator`, `BluetoothConnectionController`, a
 
 ## 7.1 Combine presentation state
 
-Phase 1 of the UI migration replaces the previous presentation observation mechanism in the
-layer. Presentation objects now conform to `ObservableObject`, and mutable
-state consumed by SwiftUI is marked `@Published`.
+The presentation migration is complete. Presentation objects conform to
+`ObservableObject`, and mutable state consumed by SwiftUI is marked
+`@Published`. Combine is also used selectively for derived presentation
+state when multiple changing inputs have a meaningful relationship.
 
 Ownership is explicit at the view boundary:
 
@@ -285,10 +286,10 @@ reevaluation while the destination remains in the navigation stack.
 `ScannerViewModel`.
 
 Nested `ObservableObject` state is not implicitly forwarded. Where a
-ViewModel needs another observable object's changing state,
-it subscribes explicitly. For example, `FileTransferViewModel` maps
-`BluetoothConnectionController.$state` into its own published
-`isConnected` property.
+ViewModel needs another observable object's changing state, it subscribes
+explicitly. `BluetoothConnectionController` derives and publishes
+`isConnected` from its connection state, and `FileTransferViewModel`
+subscribes to `BluetoothConnectionController.$isConnected`.
 
 The resulting presentation flow is:
 
@@ -305,6 +306,87 @@ SwiftUI
 ```
 
 Commands and navigation callbacks remain explicit imperative operations.
+
+
+### 7.2 Selective reactive derivation
+
+The project intentionally does **not** turn every computed property or user
+action into a publisher.
+
+The rule is:
+
+> Use Combine for meaningful relationships between changing state. Keep
+> trivial projections, formatting, and commands simple.
+
+For file transfer, connection state and transfer state form a reusable
+capability graph:
+
+```text
+BluetoothConnectionController.$isConnected
+                    ↓
+          FileTransferViewModel
+                    ↓
+          isTransferAvailable
+           ├── canChooseFile
+           ├── canDownload
+           ├── canUpload
+           └── canReadStatistics
+
+$isConnected + $transferState
+                    ↓
+                 canCancel
+```
+
+Transfer presentation is derived once from the same underlying inputs:
+
+```text
+$transferState + $isConnected
+                    ↓
+      FileTransferPresentationState
+           ├── statusText
+           ├── uploadProgress
+           ├── uploadProgressText
+           ├── indeterminateProgressText
+           └── isError
+```
+
+`canChooseFile` and `canDownload` remain computed aliases of
+`isTransferAvailable`; they are not separate published state.
+
+`DeviceViewModel` follows the same principle. Readiness and discovered
+characteristics derive `availableCharacteristics`, which then feeds write,
+read, and notification availability. Cheap presentation projections such as
+status text remain computed.
+
+### 7.3 Swift 6 isolation boundary
+
+The project target uses modern Swift concurrency rules, while CoreBluetooth
+work is intentionally serialized on `bluetoothQueue`.
+
+Pure BLE/domain value types used on that queue must therefore remain usable
+outside the main actor. Types such as `MirabilisUUID` and `BluetoothState`
+are explicitly `nonisolated`.
+
+The boundary is:
+
+```text
+CoreBluetooth callbacks
+        ↓
+bluetoothQueue
+        ↓
+nonisolated BLE/domain value types
+        ↓
+BluetoothManager events
+        ↓
+main queue / MainActor
+        ↓
+ObservableObject presentation layer
+        ↓
+SwiftUI
+```
+
+This keeps actor isolation strict where it matters without accidentally
+forcing transport-layer value semantics onto `MainActor`.
 
 ## 8. Event flow
 

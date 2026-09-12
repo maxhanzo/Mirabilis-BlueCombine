@@ -68,11 +68,13 @@ selected/downloaded file state, errors, exporter presentation, and connection
 availability are exposed to SwiftUI through `@Published` properties.
 `FileTransferView` owns its factory-created ViewModel with `@StateObject`.
 
-Connection availability deserves special attention: the ViewModel subscribes
-to `BluetoothConnectionController.$state`, maps it to a Boolean connection
-state, removes duplicates, and publishes the result as `isConnected`. This
-explicit subscription replaces the nested dependency tracking previously
-provided by the previous presentation observation mechanism.
+Connection availability deserves special attention:
+`BluetoothConnectionController` derives and publishes `isConnected` from its
+connection state. `FileTransferViewModel` subscribes directly to
+`BluetoothConnectionController.$isConnected` and mirrors that value into its
+own presentation state. This explicit subscription is required because
+nested `ObservableObject` changes are not automatically forwarded by
+SwiftUI.
 
 
 `FileTransferViewModel` also independently subscribes to connection lifecycle and `Total Uploaded Bytes` value updates because those concerns belong to feature presentation/statistics rather than the transfer protocol service.
@@ -505,7 +507,45 @@ canDownload
 canCancel
 ```
 
-Actions also guard connectivity before invoking protocol work, while `BluetoothManager` performs its own transport-level connection and characteristic guards.
+The capability graph is derived from shared state rather than recalculated
+independently in each button:
+
+```text
+$isConnected + $transferState
+        ↓
+isTransferAvailable
+   ├── canChooseFile
+   ├── canDownload
+   ├── canUpload (+ selectedFile)
+   └── canReadStatistics (+ read-in-progress)
+
+$isConnected + $transferState
+        ↓
+canCancel
+```
+
+`canChooseFile` and `canDownload` are simple computed aliases of
+`isTransferAvailable`, avoiding redundant `@Published` state.
+
+Presentation details are also consolidated:
+
+```text
+$transferState + $isConnected
+        ↓
+FileTransferPresentationState
+   ├── statusText
+   ├── uploadProgress
+   ├── uploadProgressText
+   ├── indeterminateProgressText
+   └── isError
+```
+
+Transfer failures are presented through this snapshot rather than duplicated
+through the generic `errorMessage` channel.
+
+Actions still guard connectivity before invoking protocol work, while
+`BluetoothManager` performs its own transport-level connection and
+characteristic guards.
 
 ---
 

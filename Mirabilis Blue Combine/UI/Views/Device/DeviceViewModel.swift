@@ -74,6 +74,18 @@ final class DeviceViewModel: ObservableObject {
     @Published
     var basicWriteInput = ""
     
+    // MARK: - Reactive UI Capabilities
+
+    @Published
+    private var availableCharacteristics:
+        Set<MirabilisUUID.Characteristic> = []
+
+    @Published
+    private(set) var canWriteBasicValue = false
+
+    @Published
+    private(set) var canWriteObservableValue = false
+
     var onDisconnected: (() -> Void)?
 
     // MARK: - Init
@@ -86,6 +98,7 @@ final class DeviceViewModel: ObservableObject {
         self.bluetoothManager = bluetoothManager
 
         bindBluetoothEvents()
+        bindPresentationState()
 
         AppLogger.ui.debug(
             "DeviceViewModel initialized for \(device.displayName, privacy: .public)"
@@ -167,11 +180,7 @@ extension DeviceViewModel {
     func canRead(
         _ characteristic: MirabilisUUID.Characteristic
     ) -> Bool {
-        guard state == .ready else {
-            return false
-        }
-
-        return characteristics.contains(
+        availableCharacteristics.contains(
             characteristic
         )
     }
@@ -192,25 +201,12 @@ extension DeviceViewModel {
         )
     }
 
-    var canWriteBasicValue: Bool {
-        state == .ready &&
-        characteristics.contains(.basicWrite) &&
-        !basicWriteInput.isEmpty &&
-        !isWriting(.basicWrite)
-    }
-
-    var canWriteObservableValue: Bool {
-        state == .ready &&
-        characteristics.contains(.observableWrite) &&
-        !observableWriteInput.isEmpty &&
-        !isWriting(.observableWrite)
-    }
-
     func canNotify(
         _ characteristic: MirabilisUUID.Characteristic
     ) -> Bool {
-        state == .ready &&
-        characteristics.contains(characteristic) &&
+        availableCharacteristics.contains(
+            characteristic
+        ) &&
         characteristic.supportsNotifications
     }
 
@@ -220,6 +216,95 @@ extension DeviceViewModel {
         notifyingCharacteristics.contains(
             characteristic
         )
+    }
+}
+
+// MARK: - Reactive Presentation State
+
+private extension DeviceViewModel {
+
+    func bindPresentationState() {
+        bindAvailableCharacteristics()
+        bindCanWriteBasicValue()
+        bindCanWriteObservableValue()
+    }
+
+    func bindAvailableCharacteristics() {
+        Publishers.CombineLatest(
+            $state,
+            $characteristics
+        )
+        .map {
+            state,
+            characteristics
+                -> Set<MirabilisUUID.Characteristic> in
+
+            guard state == .ready else {
+                return []
+            }
+
+            return characteristics
+        }
+        .removeDuplicates()
+        .sink { [weak self] characteristics in
+            self?.availableCharacteristics =
+                characteristics
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindCanWriteBasicValue() {
+        Publishers.CombineLatest3(
+            $availableCharacteristics,
+            $basicWriteInput,
+            $writingCharacteristics
+        )
+        .map {
+            availableCharacteristics,
+            input,
+            writingCharacteristics in
+
+            availableCharacteristics.contains(
+                .basicWrite
+            ) &&
+            !input.isEmpty &&
+            !writingCharacteristics.contains(
+                .basicWrite
+            )
+        }
+        .removeDuplicates()
+        .sink { [weak self] canWrite in
+            self?.canWriteBasicValue =
+                canWrite
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindCanWriteObservableValue() {
+        Publishers.CombineLatest3(
+            $availableCharacteristics,
+            $observableWriteInput,
+            $writingCharacteristics
+        )
+        .map {
+            availableCharacteristics,
+            input,
+            writingCharacteristics in
+
+            availableCharacteristics.contains(
+                .observableWrite
+            ) &&
+            !input.isEmpty &&
+            !writingCharacteristics.contains(
+                .observableWrite
+            )
+        }
+        .removeDuplicates()
+        .sink { [weak self] canWrite in
+            self?.canWriteObservableValue =
+                canWrite
+        }
+        .store(in: &cancellables)
     }
 }
 

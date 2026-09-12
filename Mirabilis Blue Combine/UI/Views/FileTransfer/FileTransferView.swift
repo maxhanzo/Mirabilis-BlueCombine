@@ -143,8 +143,8 @@ private extension FileTransferView {
                         .bordered
                     )
                     .disabled(
-                        viewModel
-                            .isReadingTotalUploadedBytes
+                        !viewModel
+                            .canReadStatistics
                     )
                 }
             }
@@ -244,7 +244,9 @@ private extension FileTransferView {
             }
 
             if let statusText =
-                viewModel.transferStatusText {
+                viewModel
+                    .transferPresentation
+                    .statusText {
                 Text(
                     statusText
                 )
@@ -275,7 +277,9 @@ private extension FileTransferView {
     var transferProgress: some View {
 
         if let progress =
-            viewModel.uploadProgress {
+            viewModel
+                .transferPresentation
+                .uploadProgress {
 
             VStack(
                 alignment: .leading,
@@ -286,7 +290,9 @@ private extension FileTransferView {
                 )
 
                 if let progressText =
-                    viewModel.uploadProgressText {
+                    viewModel
+                        .transferPresentation
+                        .uploadProgressText {
                     Text(
                         progressText
                     )
@@ -303,30 +309,14 @@ private extension FileTransferView {
                 4
             )
 
-        } else {
-            switch viewModel.transferState {
+        } else if let progressText =
+            viewModel
+                .transferPresentation
+                .indeterminateProgressText {
 
-            case .preparingUpload:
-                indeterminateProgress(
-                    text: "Preparing upload…"
-                )
-
-            case .preparingDownload:
-                indeterminateProgress(
-                    text: "Preparing download…"
-                )
-
-            case .downloading(
-                let bytesTransferred
-            ):
-                indeterminateProgress(
-                    text:
-                        "\(bytesTransferred.formatted()) bytes downloaded"
-                )
-
-            default:
-                EmptyView()
-            }
+            indeterminateProgress(
+                text: progressText
+            )
         }
     }
 
@@ -351,12 +341,11 @@ private extension FileTransferView {
     }
 
     var transferStatusStyle: Color {
-        switch viewModel.transferState {
-        case .failed:
-            return .red
-        default:
-            return .secondary
-        }
+        viewModel
+            .transferPresentation
+            .isError
+        ? .red
+        : .secondary
     }
 }
 

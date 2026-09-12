@@ -10,6 +10,144 @@ import CoreBluetooth
 import Foundation
 import OSLog
 
+struct FileTransferPresentationState:
+    Equatable {
+
+    let statusText: String?
+    let uploadProgress: Double?
+    let uploadProgressText: String?
+    let indeterminateProgressText: String?
+    let isError: Bool
+
+    static func make(
+        transferState: FileTransferState,
+        isConnected: Bool
+    ) -> FileTransferPresentationState {
+
+        switch transferState {
+
+        case .idle:
+            return .init(
+                statusText:
+                    isConnected
+                    ? nil
+                    : "Bluetooth disconnected",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: nil,
+                isError: false
+            )
+
+        case .preparingUpload:
+            return .init(
+                statusText: "Preparing upload…",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText:
+                    "Preparing upload…",
+                isError: false
+            )
+
+        case let .uploading(
+            bytesTransferred,
+            totalBytes
+        ):
+            let progressText = """
+            \(bytesTransferred.formatted()) / \
+            \(totalBytes.formatted()) bytes
+            """
+
+            let progress: Double? =
+                totalBytes > 0
+                ? Double(bytesTransferred) /
+                    Double(totalBytes)
+                : nil
+
+            return .init(
+                statusText: progressText,
+                uploadProgress: progress,
+                uploadProgressText:
+                    progressText,
+                indeterminateProgressText: nil,
+                isError: false
+            )
+
+        case .preparingDownload:
+            return .init(
+                statusText: "Preparing download…",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText:
+                    "Preparing download…",
+                isError: false
+            )
+
+        case let .downloading(
+            bytesTransferred
+        ):
+            let text = """
+            \(bytesTransferred.formatted()) \
+            bytes downloaded
+            """
+
+            return .init(
+                statusText: text,
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: text,
+                isError: false
+            )
+
+        case let .completed(
+            .upload(
+                bytesTransferred
+            )
+        ):
+            return .init(
+                statusText:
+                    "Upload completed — \(bytesTransferred.formatted()) bytes",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: nil,
+                isError: false
+            )
+
+        case let .completed(
+            .download(
+                bytesTransferred
+            )
+        ):
+            return .init(
+                statusText:
+                    "Download completed — \(bytesTransferred.formatted()) bytes",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: nil,
+                isError: false
+            )
+
+        case .cancelled:
+            return .init(
+                statusText: "Transfer cancelled",
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: nil,
+                isError: false
+            )
+
+        case let .failed(error):
+            return .init(
+                statusText:
+                    error.localizedDescription,
+                uploadProgress: nil,
+                uploadProgressText: nil,
+                indeterminateProgressText: nil,
+                isError: true
+            )
+        }
+    }
+}
+
 @MainActor
 final class FileTransferViewModel: ObservableObject {
 
@@ -66,6 +204,13 @@ final class FileTransferViewModel: ObservableObject {
         FileTransferState = .idle
 
     @Published
+    private(set) var transferPresentation =
+        FileTransferPresentationState.make(
+            transferState: .idle,
+            isConnected: false
+        )
+
+    @Published
     private(set) var errorMessage:
         String?
 
@@ -73,6 +218,20 @@ final class FileTransferViewModel: ObservableObject {
 
     @Published
     private(set) var isConnected: Bool
+
+    // MARK: - Reactive UI Capabilities
+
+    @Published
+    private var isTransferAvailable = false
+
+    @Published
+    private(set) var canReadStatistics = false
+
+    @Published
+    private(set) var canUpload = false
+
+    @Published
+    private(set) var canCancel = false
 
     init(
         device: BluetoothDevice,
@@ -104,6 +263,7 @@ final class FileTransferViewModel: ObservableObject {
         bindConnectionState()
         bindFileTransferState()
         bindBluetoothEvents()
+        bindPresentationState()
 
         AppLogger.ui.debug(
             "FileTransferViewModel initialized for \(device.displayName, privacy: .public)"
@@ -116,14 +276,7 @@ final class FileTransferViewModel: ObservableObject {
 private extension FileTransferViewModel {
 
     func bindConnectionState() {
-        connectionController.$state
-            .map { state in
-                if case .connected = state {
-                    return true
-                }
-
-                return false
-            }
+        connectionController.$isConnected
             .removeDuplicates()
             .sink { [weak self] isConnected in
                 self?.isConnected =
@@ -133,9 +286,134 @@ private extension FileTransferViewModel {
     }
 }
 
+// MARK: - Reactive Presentation State
+
+private extension FileTransferViewModel {
+
+    func bindPresentationState() {
+        bindTransferPresentation()
+        bindTransferAvailability()
+        bindCanReadStatistics()
+        bindCanUpload()
+        bindCanCancel()
+    }
+
+    func bindTransferPresentation() {
+        Publishers.CombineLatest(
+            $transferState,
+            $isConnected
+        )
+        .map {
+            transferState,
+            isConnected in
+
+            FileTransferPresentationState.make(
+                transferState:
+                    transferState,
+                isConnected:
+                    isConnected
+            )
+        }
+        .removeDuplicates()
+        .sink { [weak self] presentation in
+            self?.transferPresentation =
+                presentation
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindTransferAvailability() {
+        Publishers.CombineLatest(
+            $isConnected,
+            $transferState
+        )
+        .map {
+            isConnected,
+            transferState in
+
+            isConnected &&
+            !transferState.isTransferring
+        }
+        .removeDuplicates()
+        .sink { [weak self] isAvailable in
+            self?.isTransferAvailable =
+                isAvailable
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindCanReadStatistics() {
+        Publishers.CombineLatest(
+            $isTransferAvailable,
+            $isReadingTotalUploadedBytes
+        )
+        .map {
+            isAvailable,
+            isReading in
+
+            isAvailable &&
+            !isReading
+        }
+        .removeDuplicates()
+        .sink { [weak self] canReadStatistics in
+            self?.canReadStatistics =
+                canReadStatistics
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindCanUpload() {
+        Publishers.CombineLatest(
+            $isTransferAvailable,
+            $selectedFile
+        )
+        .map {
+            isAvailable,
+            selectedFile in
+
+            isAvailable &&
+            selectedFile != nil
+        }
+        .removeDuplicates()
+        .sink { [weak self] canUpload in
+            self?.canUpload =
+                canUpload
+        }
+        .store(in: &cancellables)
+    }
+
+    func bindCanCancel() {
+        Publishers.CombineLatest(
+            $isConnected,
+            $transferState
+        )
+        .map {
+            isConnected,
+            transferState in
+
+            isConnected &&
+            transferState.isTransferring
+        }
+        .removeDuplicates()
+        .sink { [weak self] canCancel in
+            self?.canCancel =
+                canCancel
+        }
+        .store(in: &cancellables)
+    }
+}
+
 // MARK: - Presentation
 
 extension FileTransferViewModel {
+
+    var canChooseFile: Bool {
+        isTransferAvailable
+    }
+
+    var canDownload: Bool {
+        isTransferAvailable
+    }
 
     var totalUploadedBytesText:
         String {
@@ -150,115 +428,6 @@ extension FileTransferViewModel {
 
     var hasSelectedFile: Bool {
         selectedFile != nil
-    }
-
-    var canChooseFile: Bool {
-        isConnected &&
-        !transferState.isTransferring
-    }
-
-    var canReadStatistics: Bool {
-        isConnected &&
-        !isReadingTotalUploadedBytes &&
-        !transferState.isTransferring
-    }
-
-    var canUpload: Bool {
-        isConnected &&
-        selectedFile != nil &&
-        !transferState.isTransferring
-    }
-
-    var canDownload: Bool {
-        isConnected &&
-        !transferState.isTransferring
-    }
-
-    var canCancel: Bool {
-        isConnected &&
-        transferState.isTransferring
-    }
-
-    var uploadProgress: Double? {
-        guard case let .uploading(
-            bytesTransferred,
-            totalBytes
-        ) = transferState,
-        totalBytes > 0 else {
-            return nil
-        }
-
-        return Double(bytesTransferred) /
-            Double(totalBytes)
-    }
-
-    var uploadProgressText: String? {
-        guard case let .uploading(
-            bytesTransferred,
-            totalBytes
-        ) = transferState else {
-            return nil
-        }
-
-        return """
-        \(bytesTransferred.formatted()) / \
-        \(totalBytes.formatted()) bytes
-        """
-    }
-
-    var transferStatusText: String? {
-        switch transferState {
-
-        case .idle:
-            if !isConnected {
-                return "Bluetooth disconnected"
-            }
-
-            return nil
-
-        case .preparingUpload:
-            return "Preparing upload…"
-
-        case .uploading:
-            return uploadProgressText
-
-        case .preparingDownload:
-            return "Preparing download…"
-
-        case .downloading(
-            let bytesTransferred
-        ):
-            return """
-            \(bytesTransferred.formatted()) \
-            bytes downloaded
-            """
-
-        case .completed(
-            .upload(
-                let bytesTransferred
-            )
-        ):
-            return """
-            Upload completed — \
-            \(bytesTransferred.formatted()) bytes
-            """
-
-        case .completed(
-            .download(
-                let bytesTransferred
-            )
-        ):
-            return """
-            Download completed — \
-            \(bytesTransferred.formatted()) bytes
-            """
-
-        case .cancelled:
-            return "Transfer cancelled"
-
-        case .failed(let error):
-            return error.localizedDescription
-        }
     }
 
     var downloadedDocument:
@@ -456,9 +625,6 @@ extension FileTransferViewModel {
             transferState =
                 .failed(error)
 
-            errorMessage =
-                error.localizedDescription
-
         } catch {
             errorMessage =
                 error.localizedDescription
@@ -483,9 +649,6 @@ extension FileTransferViewModel {
 
             transferState =
                 .failed(error)
-
-            errorMessage =
-                error.localizedDescription
 
         } catch {
             errorMessage =
@@ -538,9 +701,8 @@ private extension FileTransferViewModel {
                     true
             }
 
-        case .failed(let error):
-            errorMessage =
-                error.localizedDescription
+        case .failed:
+            break
 
         default:
             break
