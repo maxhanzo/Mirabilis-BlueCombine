@@ -399,6 +399,8 @@ The file transfer protocol implementation in detail: download, upload.
 
 **Part 4 - From Observers to Combine: Evolving Our CoreBluetooth Architecture** 
 
+Refactoring a working BLE application into a reactive architecture without rewriting the transport layer.
+
 **Part 5 - BLE + Kotlin Multi Platform**
 
 Designing and implementing a custom file-transfer protocol on top of BLE.
