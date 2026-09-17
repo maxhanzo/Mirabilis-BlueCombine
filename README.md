@@ -395,15 +395,13 @@ Building the native iOS client and exploring its CoreBluetooth architecture and 
 
 **[Part 3B — Implementing Bidirectional File Transfer over GATT](https://www.linkedin.com/pulse/part-3b-implementing-bidirectional-file-transfer-over-ueda-5wesf/?trackingId=izG9qUjqQlS41yZXy9wBvw%3D%3D)**
 
-The file transfer protocol implementation in detail: download, upload.
+Designing and implementing a custom file-transfer protocol on top of BLE: download and upload
 
 **Part 4 - From Observers to Combine: Evolving Our CoreBluetooth Architecture** 
 
 Refactoring a working BLE application into a reactive architecture without rewriting the transport layer.
 
 **Part 5 - BLE + Kotlin Multi Platform**
-
-Designing and implementing a custom file-transfer protocol on top of BLE.
 
 *Coming soon.*
 
