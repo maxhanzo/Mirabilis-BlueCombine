@@ -1,4 +1,4 @@
-# Mirabilis Blue --- iOS BLE Client
+# Mirabilis Blue Combine --- iOS BLE Client
 
 A native iOS application demonstrating how to build a structured,
 production-oriented Bluetooth Low Energy client using **Swift, SwiftUI,
