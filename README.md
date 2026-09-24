@@ -397,7 +397,7 @@ Building the native iOS client and exploring its CoreBluetooth architecture and 
 
 Designing and implementing a custom file-transfer protocol on top of BLE: download and upload
 
-**Part 4 - From Observers to Combine: Evolving Our CoreBluetooth Architecture** 
+**[Part 4 - From Observers to Combine: Evolving Our CoreBluetooth Architecture](https://www.linkedin.com/pulse/part-4-from-observers-combine-evolving-our-max-hiroyuki-ueda-4krqf/)**
 
 Refactoring a working BLE application into a reactive architecture without rewriting the transport layer.
 
